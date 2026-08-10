@@ -1,36 +1,75 @@
-# Python
+# ============================================
+# Reponix - Git Ignore
+# ============================================
+
+# ---------- Python ----------
+
 __pycache__/
 *.py[cod]
 *.pyo
+
 .pytest_cache/
 .mypy_cache/
 
-# Virtual environments
+# ---------- Virtual Environments ----------
+
 .venv/
 venv/
+env/
 
-# Environment variables
+# ---------- Environment Variables / Secrets ----------
+
 .env
-.env.local
+.env.*
+!.env.example
 
-# Node
+# ---------- Node.js / Next.js ----------
+
 node_modules/
 .next/
 out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# IDE
+# ---------- IDE / Editors ----------
+
 .vscode/
 .idea/
 
-# OS
+# ---------- Operating System ----------
+
 .DS_Store
 Thumbs.db
 
-# Logs
+# ---------- Logs ----------
+
 *.log
 
-# Local repository clones
+# ---------- Local Repository Clones ----------
+
 repos/
 
-# AI / vector database
+# ---------- AI / Vector Database ----------
+
 chroma_data/
+
+# ---------- Build / Distribution ----------
+
+dist/
+build/
+
+# ---------- Coverage ----------
+
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# ---------- Temporary Files ----------
+
+*.tmp
+*.temp
+*.swp
+*.swo
