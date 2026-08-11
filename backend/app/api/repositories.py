@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user_id
 from app.database.connection import get_db
 from app.models.repository import Repository
-from app.services.repository_service import clone_repository
 from app.schemas.repository import (
     RepositoryCreate,
     RepositoryResponse,
 )
 from app.services.file_scanner import save_repository_files
+from app.services.indexing_service import index_repository
+from app.services.repository_service import clone_repository
 
 
 router = APIRouter(
@@ -68,28 +69,53 @@ def create_repository(
     db.refresh(repository)
 
     try:
+        # 1. Clone repository
         repo_path = clone_repository(
             str(repository_data.repo_url),
             repository.id,
         )
 
+        # 2. Scan and save files to PostgreSQL
         save_repository_files(
             repo_path,
             repository.id,
             db,
         )
 
-        repository.status = "cloned"
+        # 3. Start indexing
+        repository.status = "indexing"
         db.commit()
         db.refresh(repository)
 
-    except Exception:
+        # 4. Chunk → embed → ChromaDB
+        total_chunks = index_repository(
+            repo_path,
+            repository.id,
+            db,
+        )
+
+        # 5. Indexing completed
+        repository.status = "ready"
+        db.commit()
+        db.refresh(repository)
+
+        print(
+            f"Repository {repository.id} indexed "
+            f"successfully: {total_chunks} chunks"
+        )
+
+    except Exception as exc:
         repository.status = "failed"
         db.commit()
 
+        print(
+            "REPOSITORY ERROR:",
+            repr(exc),
+        )
+
         raise HTTPException(
             status_code=500,
-            detail="Failed to clone or scan repository",
+            detail=str(exc),
         )
 
     return repository
