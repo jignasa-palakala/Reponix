@@ -1,7 +1,7 @@
 import os
+import time
 
 from google import genai
-
 
 api_key = os.getenv("GEMINI_API_KEY")
 
@@ -19,14 +19,12 @@ def generate_answer(
     prompt = f"""
 You are Reponix, an AI software-engineering assistant.
 
-Answer the user's question using the repository
-context provided below.
+Answer the user's question using the repository context provided below.
 
 Rules:
 - Use the repository context as your primary source.
 - Do not invent files, functions, or behavior.
-- If the context does not contain enough information,
-  say that clearly.
+- If the context does not contain enough information, say that clearly.
 - Explain the answer in a concise, developer-friendly way.
 - Mention relevant file names when they are available.
 
@@ -37,9 +35,28 @@ Repository context:
 {context}
 """
 
-    response = client.models.generate_content(
-        model="gemini-flash-latest",
-        contents=prompt,
-    )
+    max_retries = 3
 
-    return response.text
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model="gemini-flash-latest",
+                contents=prompt,
+            )
+
+            return response.text
+
+        except Exception as error:
+            print(
+                f"Gemini request failed "
+                f"(attempt {attempt + 1}/{max_retries}): {error}"
+            )
+
+            if attempt == max_retries - 1:
+                return (
+                    "Reponix AI is temporarily unavailable. "
+                    "Gemini is experiencing high demand. "
+                    "Please try again in a few seconds."
+                )
+
+            time.sleep(2 ** attempt)

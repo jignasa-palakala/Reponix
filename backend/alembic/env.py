@@ -2,7 +2,10 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
+from app.models.user import User
+from app.models.repository import Repository
+from app.models.conversation import Conversation
+from app.models.message import Message
 from alembic import context
 import os
 from pathlib import Path

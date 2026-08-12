@@ -13,7 +13,10 @@ from app.schemas.repository import (
 from app.services.file_scanner import save_repository_files
 from app.services.indexing_service import index_repository
 from app.services.repository_service import clone_repository
+from pathlib import Path
+from urllib.parse import unquote
 
+from app.models.repository_file import RepositoryFile
 
 router = APIRouter(
     prefix="/api/repositories",
@@ -119,3 +122,104 @@ def create_repository(
         )
 
     return repository
+
+@router.get(
+    "",
+    response_model=list[RepositoryResponse],
+)
+def get_repositories(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Repository)
+        .filter(Repository.user_id == user_id)
+        .order_by(Repository.id.desc())
+        .all()
+    )
+
+@router.get("/{repository_id}/file")
+def get_repository_file(
+    repository_id: int,
+    path: str,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    repository = (
+        db.query(Repository)
+        .filter(
+            Repository.id == repository_id,
+            Repository.user_id == user_id,
+        )
+        .first()
+    )
+
+    if repository is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not found",
+        )
+
+    file_path = unquote(path)
+
+    repository_file = (
+        db.query(RepositoryFile)
+        .filter(
+            RepositoryFile.repository_id == repository_id,
+            RepositoryFile.file_path == file_path,
+        )
+        .first()
+    )
+
+    if repository_file is None:
+        raise HTTPException(
+            status_code=404,
+            detail="File not found",
+        )
+
+    repos_directory = (
+        Path(__file__).resolve().parents[2].parent / "repos"
+    )
+
+    repo_directory = (
+        repos_directory / f"repo_{repository_id}"
+    ).resolve()
+
+    actual_file = (
+        repo_directory / file_path
+    ).resolve()
+
+    # Security: prevent ../ path traversal
+    try:
+        actual_file.relative_to(repo_directory)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path",
+        )
+
+    if not actual_file.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="File does not exist",
+        )
+
+    try:
+        content = actual_file.read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to read file: {exc}",
+        )
+
+    return {
+        "id": repository_file.id,
+        "file_name": repository_file.file_name,
+        "file_path": repository_file.file_path,
+        "language": repository_file.language,
+        "size": repository_file.size,
+        "content": content,
+    }
