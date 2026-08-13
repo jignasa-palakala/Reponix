@@ -3,10 +3,19 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+type RepositoryFile = {
+  id: number;
+  repository_id: number;
+  file_name: string;
+  file_path: string;
+  language: string;
+  size: number;
+};
+
 type Source = {
   file_path?: string;
   content?: string;
-  score?: number;
+  distance?: number;
 };
 
 type Message = {
@@ -30,6 +39,7 @@ type ConversationDetail = {
   messages: {
     role: "user" | "assistant";
     content: string;
+    sources?: Source[];
   }[];
 };
 
@@ -37,13 +47,16 @@ export default function RepositoryChat() {
   const params = useParams();
   const repositoryId = Number(params.id);
 
-  const [question, setQuestion] = useState("");
+  const [files, setFiles] = useState<RepositoryFile[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+
+  const [question, setQuestion] = useState("");
   const [conversationId, setConversationId] =
     useState<number | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(true);
   const [loadingConversations, setLoadingConversations] =
     useState(true);
 
@@ -58,8 +71,33 @@ export default function RepositoryChat() {
       return;
     }
 
+    loadFiles();
     loadConversations();
   }, []);
+
+  async function loadFiles() {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/repositories/${repositoryId}/files`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to load repository files");
+      }
+
+      const data = await response.json();
+      setFiles(data);
+    } catch (error) {
+      console.error("Failed to load files:", error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  }
 
   async function loadConversations() {
     try {
@@ -94,14 +132,6 @@ export default function RepositoryChat() {
     }
   }
 
-  // Open the source-code viewer
-  function openSource(filePath: string) {
-    const encodedPath = encodeURIComponent(filePath);
-
-    window.location.href =
-      `/repositories/${repositoryId}/file?path=${encodedPath}`;
-  }
-
   async function loadConversation(id: number) {
     try {
       setLoading(true);
@@ -126,12 +156,11 @@ export default function RepositoryChat() {
 
       setMessages(
         data.messages.map((message) => ({
-            role: message.role,
-            content: message.content,
-            sources: message.sources || [],
+          role: message.role,
+          content: message.content,
+          sources: message.sources || [],
         }))
-    );
-    
+      );
     } catch (error) {
       console.error(
         "Failed to load conversation:",
@@ -146,6 +175,13 @@ export default function RepositoryChat() {
     setConversationId(null);
     setMessages([]);
     setQuestion("");
+  }
+
+  function openFile(filePath: string) {
+    window.location.href =
+      `/repositories/${repositoryId}/file?path=${encodeURIComponent(
+        filePath
+      )}`;
   }
 
   async function sendMessage(event: FormEvent) {
@@ -234,8 +270,8 @@ export default function RepositoryChat() {
   return (
     <main className="flex min-h-screen bg-gray-950 text-white">
 
-      {/* Sidebar */}
-      <aside className="flex w-72 flex-col border-r border-gray-800 bg-gray-900">
+      {/* Conversations sidebar */}
+      <aside className="flex w-64 flex-col border-r border-gray-800 bg-gray-900">
 
         <div className="border-b border-gray-800 p-5">
           <h1 className="text-xl font-bold">
@@ -257,6 +293,7 @@ export default function RepositoryChat() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-3">
+
           <p className="px-2 py-2 text-xs font-semibold uppercase text-gray-500">
             Conversations
           </p>
@@ -296,9 +333,11 @@ export default function RepositoryChat() {
               ))}
             </div>
           )}
+
         </div>
 
         <div className="border-t border-gray-800 p-4">
+
           <button
             onClick={() =>
               (window.location.href = "/dashboard")
@@ -314,13 +353,71 @@ export default function RepositoryChat() {
           >
             Logout
           </button>
+
         </div>
+
+      </aside>
+
+      {/* Repository files */}
+      <aside className="hidden w-72 flex-col border-r border-gray-800 bg-gray-950 lg:flex">
+
+        <div className="border-b border-gray-800 p-5">
+          <h2 className="font-semibold">
+            Repository Files
+          </h2>
+
+          <p className="mt-1 text-xs text-gray-500">
+            {files.length} indexed files
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+
+          {loadingFiles ? (
+            <p className="p-3 text-sm text-gray-500">
+              Loading files...
+            </p>
+          ) : files.length === 0 ? (
+            <p className="p-3 text-sm text-gray-500">
+              No files found.
+            </p>
+          ) : (
+            <div className="space-y-1">
+
+              {files.map((file) => (
+                <button
+                  key={file.id}
+                  onClick={() =>
+                    openFile(file.file_path)
+                  }
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-800"
+                >
+
+                  <div className="flex items-center gap-2">
+
+                    <span>
+                      📄
+                    </span>
+
+                    <span className="truncate text-gray-300">
+                      {file.file_path}
+                    </span>
+
+                  </div>
+
+                </button>
+              ))}
+
+            </div>
+          )}
+
+        </div>
+
       </aside>
 
       {/* Main chat */}
       <section className="flex min-w-0 flex-1 flex-col">
 
-        {/* Header */}
         <header className="border-b border-gray-800 px-6 py-4">
           <h2 className="text-lg font-semibold">
             Repository Chat
@@ -331,12 +428,13 @@ export default function RepositoryChat() {
           </p>
         </header>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-8">
+
           <div className="mx-auto max-w-4xl space-y-6">
 
             {messages.length === 0 && (
               <div className="py-20 text-center">
+
                 <h2 className="text-3xl font-semibold">
                   Ask your repository anything
                 </h2>
@@ -344,13 +442,13 @@ export default function RepositoryChat() {
                 <p className="mt-3 text-gray-400">
                   Reponix will search the code and explain it.
                 </p>
+
               </div>
             )}
 
             {messages.map((message, index) => (
               <div key={index}>
 
-                {/* Message */}
                 <div
                   className={
                     message.role === "user"
@@ -358,6 +456,7 @@ export default function RepositoryChat() {
                       : "mr-auto max-w-3xl rounded-2xl border border-gray-800 bg-gray-900 p-4"
                   }
                 >
+
                   <div className="mb-2 text-xs font-semibold uppercase text-gray-400">
                     {message.role === "user"
                       ? "You"
@@ -367,6 +466,7 @@ export default function RepositoryChat() {
                   <div className="whitespace-pre-wrap leading-7">
                     {message.content}
                   </div>
+
                 </div>
 
                 {/* Sources */}
@@ -380,6 +480,7 @@ export default function RepositoryChat() {
                       </p>
 
                       <div className="space-y-2">
+
                         {message.sources.map(
                           (source, sourceIndex) => (
                             <div
@@ -387,11 +488,10 @@ export default function RepositoryChat() {
                               className="rounded-lg border border-gray-800 bg-gray-950 p-3"
                             >
 
-                              {/* Clickable file name */}
                               {source.file_path ? (
                                 <button
                                   onClick={() =>
-                                    openSource(
+                                    openFile(
                                       source.file_path!
                                     )
                                   }
@@ -400,21 +500,19 @@ export default function RepositoryChat() {
                                   📄 {source.file_path}
                                 </button>
                               ) : (
-                                <p className="text-sm font-medium text-gray-400">
+                                <p className="text-sm text-gray-400">
                                   Source{" "}
                                   {sourceIndex + 1}
                                 </p>
                               )}
 
-                              {/* Relevance score */}
-                              {source.score !== undefined && (
+                              {source.distance !== undefined && (
                                 <p className="mt-1 text-xs text-gray-500">
-                                  Relevance:{" "}
-                                  {source.score.toFixed(3)}
+                                  Distance:{" "}
+                                  {source.distance.toFixed(3)}
                                 </p>
                               )}
 
-                              {/* Code snippet */}
                               {source.content && (
                                 <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs text-gray-500">
                                   {source.content}
@@ -424,6 +522,7 @@ export default function RepositoryChat() {
                             </div>
                           )
                         )}
+
                       </div>
 
                     </div>
@@ -439,14 +538,16 @@ export default function RepositoryChat() {
             )}
 
           </div>
+
         </div>
 
-        {/* Input */}
         <div className="border-t border-gray-800 bg-gray-950 p-4">
+
           <form
             onSubmit={sendMessage}
             className="mx-auto flex max-w-4xl gap-3"
           >
+
             <input
               value={question}
               onChange={(event) =>
@@ -466,10 +567,13 @@ export default function RepositoryChat() {
             >
               {loading ? "Thinking..." : "Send"}
             </button>
+
           </form>
+
         </div>
 
       </section>
+
     </main>
   );
 }
