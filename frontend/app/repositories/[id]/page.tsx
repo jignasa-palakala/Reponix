@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
 type RepositoryFile = {
@@ -43,6 +43,11 @@ type ConversationDetail = {
   }[];
 };
 
+type FileTree = {
+  folders: Record<string, FileTree>;
+  files: RepositoryFile[];
+};
+
 export default function RepositoryChat() {
   const params = useParams();
   const repositoryId = Number(params.id);
@@ -59,6 +64,10 @@ export default function RepositoryChat() {
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [loadingConversations, setLoadingConversations] =
     useState(true);
+
+  const [expandedFolders, setExpandedFolders] = useState<
+    Set<string>
+  >(new Set());
 
   const token =
     typeof window !== "undefined"
@@ -182,6 +191,139 @@ export default function RepositoryChat() {
       `/repositories/${repositoryId}/file?path=${encodeURIComponent(
         filePath
       )}`;
+  }
+
+  function toggleFolder(path: string) {
+    setExpandedFolders((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+
+      return next;
+    });
+  }
+
+  /*
+   * Convert the flat file list from the backend into
+   * a nested folder structure.
+   */
+  const fileTree = useMemo(() => {
+    const root: FileTree = {
+      folders: {},
+      files: [],
+    };
+
+    for (const file of files) {
+      const parts = file.file_path
+        .replaceAll("\\", "/")
+        .split("/")
+        .filter(Boolean);
+
+      let current = root;
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        const folderName = parts[i];
+
+        if (!current.folders[folderName]) {
+          current.folders[folderName] = {
+            folders: {},
+            files: [],
+          };
+        }
+
+        current = current.folders[folderName];
+      }
+
+      current.files.push(file);
+    }
+
+    return root;
+  }, [files]);
+
+  function renderTree(
+    tree: FileTree,
+    parentPath = "",
+    depth = 0
+  ): React.ReactNode {
+    const folders = Object.keys(tree.folders).sort(
+      (a, b) => a.localeCompare(b)
+    );
+
+    const sortedFiles = [...tree.files].sort((a, b) =>
+      a.file_name.localeCompare(b.file_name)
+    );
+
+    return (
+      <div>
+        {folders.map((folderName) => {
+          const folderPath = parentPath
+            ? `${parentPath}/${folderName}`
+            : folderName;
+
+          const isExpanded =
+            expandedFolders.has(folderPath);
+
+          return (
+            <div key={folderPath}>
+              <button
+                onClick={() =>
+                  toggleFolder(folderPath)
+                }
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-800"
+                style={{
+                  paddingLeft: `${8 + depth * 14}px`,
+                }}
+              >
+                <span className="w-4 text-xs">
+                  {isExpanded ? "▼" : "▶"}
+                </span>
+
+                <span>
+                  {isExpanded ? "📂" : "📁"}
+                </span>
+
+                <span className="truncate">
+                  {folderName}
+                </span>
+              </button>
+
+              {isExpanded && (
+                <div>
+                  {renderTree(
+                    tree.folders[folderName],
+                    folderPath,
+                    depth + 1
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {sortedFiles.map((file) => (
+          <button
+            key={file.id}
+            onClick={() =>
+              openFile(file.file_path)
+            }
+            className="flex w-full items-center gap-2 rounded-md py-1.5 text-left text-sm text-gray-400 hover:bg-gray-800 hover:text-white"
+            style={{
+              paddingLeft: `${22 + depth * 14}px`,
+            }}
+          >
+            <span>📄</span>
+
+            <span className="truncate">
+              {file.file_name}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
   }
 
   async function sendMessage(event: FormEvent) {
@@ -333,7 +475,6 @@ export default function RepositoryChat() {
               ))}
             </div>
           )}
-
         </div>
 
         <div className="border-t border-gray-800 p-4">
@@ -382,33 +523,7 @@ export default function RepositoryChat() {
               No files found.
             </p>
           ) : (
-            <div className="space-y-1">
-
-              {files.map((file) => (
-                <button
-                  key={file.id}
-                  onClick={() =>
-                    openFile(file.file_path)
-                  }
-                  className="w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-800"
-                >
-
-                  <div className="flex items-center gap-2">
-
-                    <span>
-                      📄
-                    </span>
-
-                    <span className="truncate text-gray-300">
-                      {file.file_path}
-                    </span>
-
-                  </div>
-
-                </button>
-              ))}
-
-            </div>
+            renderTree(fileTree)
           )}
 
         </div>
