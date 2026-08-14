@@ -3,6 +3,7 @@ import chromadb
 
 CHROMA_PATH = "chroma_data"
 
+
 client = chromadb.PersistentClient(
     path=CHROMA_PATH
 )
@@ -19,6 +20,8 @@ def add_code_chunk(
     embedding: list[float],
     repository_id: int,
     file_path: str,
+    start_line: int,
+    end_line: int,
 ):
     collection.add(
         ids=[chunk_id],
@@ -28,8 +31,21 @@ def add_code_chunk(
             {
                 "repository_id": repository_id,
                 "file_path": file_path,
+                "start_line": start_line,
+                "end_line": end_line,
             }
         ],
+    )
+
+
+def delete_repository_chunks(
+    repository_id: int,
+):
+    """Delete all chunks for a repository."""
+    collection.delete(
+        where={
+            "repository_id": repository_id,
+        }
     )
 
 

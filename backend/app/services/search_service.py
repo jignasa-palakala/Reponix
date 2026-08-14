@@ -31,6 +31,8 @@ def search_repository(
                 "content": document,
                 "file_path": metadata.get("file_path"),
                 "distance": distance,
+                "start_line": metadata.get("start_line"),
+                "end_line": metadata.get("end_line"),
             }
         )
 

@@ -26,6 +26,10 @@ class ChatSource(BaseModel):
 
     distance: float
 
+    start_line: int | None = None
+
+    end_line: int | None = None
+
 
 class ChatResponse(BaseModel):
     conversation_id: int

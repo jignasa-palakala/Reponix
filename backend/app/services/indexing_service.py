@@ -3,7 +3,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.models.repository_file import RepositoryFile
-from app.services.chunker import chunk_text
+from app.services.chunker import chunk_text_with_line_ranges
 from app.services.embedding_service import generate_embedding
 from app.services.file_reader import read_file_content
 from app.services.vector_store import add_code_chunk
@@ -32,11 +32,13 @@ def index_repository(
             repository_file.file_path,
         )
 
-        chunks = chunk_text(content)
+        chunks = chunk_text_with_line_ranges(content)
 
         for chunk_index, chunk in enumerate(chunks):
 
-            embedding = generate_embedding(chunk)
+            embedding = generate_embedding(
+                chunk["content"]
+            )
 
             chunk_id = (
                 f"repo_{repository_id}_"
@@ -46,10 +48,12 @@ def index_repository(
 
             add_code_chunk(
                 chunk_id=chunk_id,
-                content=chunk,
+                content=chunk["content"],
                 embedding=embedding,
                 repository_id=repository_id,
                 file_path=repository_file.file_path,
+                start_line=chunk["start_line"],
+                end_line=chunk["end_line"],
             )
 
             total_chunks += 1

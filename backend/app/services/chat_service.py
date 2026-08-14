@@ -76,6 +76,7 @@ def chat_with_repository(
     for result in results:
         context_parts.append(
             f"FILE: {result['file_path']}\n"
+            f"LINES: {result['start_line']}-{result['end_line']}\n"
             f"{result['content']}"
         )
 
@@ -104,6 +105,8 @@ def chat_with_repository(
                 "distance": float(
                     result.get("distance", 0)
                 ),
+                "start_line": result.get("start_line"),
+                "end_line": result.get("end_line"),
             }
         )
 

@@ -11,6 +11,8 @@ class SearchResult(BaseModel):
     content: str
     file_path: str | None
     distance: float
+    start_line: int | None = None
+    end_line: int | None = None
 
 
 class SearchResponse(BaseModel):

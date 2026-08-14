@@ -13,6 +13,7 @@ from app.schemas.repository import (
 from app.services.file_scanner import save_repository_files
 from app.services.indexing_service import index_repository
 from app.services.repository_service import clone_repository
+from app.services.vector_store import delete_repository_chunks
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -223,3 +224,113 @@ def get_repository_file(
         "size": repository_file.size,
         "content": content,
     }
+
+@router.get("/{repository_id}/files")
+def get_repository_files(
+    repository_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    repository = (
+        db.query(Repository)
+        .filter(
+            Repository.id == repository_id,
+            Repository.user_id == user_id,
+        )
+        .first()
+    )
+
+    if repository is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not found",
+        )
+
+    files = (
+        db.query(RepositoryFile)
+        .filter(
+            RepositoryFile.repository_id == repository_id
+        )
+        .order_by(RepositoryFile.file_path)
+        .all()
+    )
+
+    return files
+
+
+@router.post("/{repository_id}/reindex")
+def reindex_repository(
+    repository_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    Re-index an existing repository.
+    Useful for updating metadata (e.g., line numbers) after code changes.
+    """
+    repository = (
+        db.query(Repository)
+        .filter(
+            Repository.id == repository_id,
+            Repository.user_id == user_id,
+        )
+        .first()
+    )
+
+    if repository is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not found",
+        )
+
+    try:
+        # Get repository path
+        repos_directory = (
+            Path(__file__).resolve().parents[2].parent / "repos"
+        )
+        repo_path = (
+            repos_directory / f"repo_{repository_id}"
+        ).resolve()
+
+        if not repo_path.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail="Repository directory not found",
+            )
+
+        # Update status
+        repository.status = "indexing"
+        db.commit()
+        db.refresh(repository)
+
+        # Delete old chunks from vector store
+        delete_repository_chunks(repository_id)
+
+        # Re-index
+        total_chunks = index_repository(
+            repo_path,
+            repository.id,
+            db,
+        )
+
+        # Mark as complete
+        repository.status = "ready"
+        db.commit()
+        db.refresh(repository)
+
+        return {
+            "id": repository.id,
+            "message": f"Repository re-indexed successfully: {total_chunks} chunks",
+            "total_chunks": total_chunks,
+        }
+
+    except Exception as exc:
+        repository.status = "failed"
+        db.commit()
+
+        print("REINDEX ERROR:", repr(exc))
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
