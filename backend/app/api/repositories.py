@@ -1,4 +1,6 @@
-from urllib.parse import urlparse
+import shutil
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -10,14 +12,13 @@ from app.schemas.repository import (
     RepositoryCreate,
     RepositoryResponse,
 )
+from app.models.conversation import Conversation
+from app.models.message import Message
+from app.models.repository_file import RepositoryFile
 from app.services.file_scanner import save_repository_files
 from app.services.indexing_service import index_repository
 from app.services.repository_service import clone_repository
 from app.services.vector_store import delete_repository_chunks
-from pathlib import Path
-from urllib.parse import unquote
-
-from app.models.repository_file import RepositoryFile
 
 router = APIRouter(
     prefix="/api/repositories",
@@ -138,6 +139,73 @@ def get_repositories(
         .order_by(Repository.id.desc())
         .all()
     )
+
+@router.delete("/{repository_id}")
+def delete_repository(
+    repository_id: int,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    repository = (
+        db.query(Repository)
+        .filter(
+            Repository.id == repository_id,
+            Repository.user_id == user_id,
+        )
+        .first()
+    )
+
+    if repository is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Repository not found",
+        )
+
+    try:
+        conversation_ids = (
+            db.query(Conversation.id)
+            .filter(Conversation.repository_id == repository_id)
+            .subquery()
+        )
+
+        db.query(Message).filter(
+            Message.conversation_id.in_(conversation_ids)
+        ).delete(synchronize_session=False)
+
+        db.query(Conversation).filter(
+            Conversation.repository_id == repository_id
+        ).delete(synchronize_session=False)
+
+        db.query(RepositoryFile).filter(
+            RepositoryFile.repository_id == repository_id
+        ).delete(synchronize_session=False)
+
+        delete_repository_chunks(repository_id)
+
+        repos_directory = (
+            Path(__file__).resolve().parents[2].parent / "repos"
+        )
+        repo_directory = (
+            repos_directory / f"repo_{repository_id}"
+        ).resolve()
+
+        if repo_directory.exists():
+            shutil.rmtree(repo_directory, ignore_errors=True)
+
+        db.delete(repository)
+        db.commit()
+
+        return {
+            "id": repository_id,
+            "message": "Repository deleted successfully",
+        }
+    except Exception as exc:
+        db.rollback()
+        print("DELETE REPOSITORY ERROR:", repr(exc))
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
 @router.get("/{repository_id}/file")
 def get_repository_file(

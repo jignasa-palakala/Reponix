@@ -11,6 +11,7 @@ from app.core.security import (
 from app.database.connection import get_db
 from app.models.user import User
 from app.schemas.user import (
+    PasswordChange,
     TokenResponse,
     UserCreate,
     UserLogin,
@@ -113,3 +114,37 @@ def get_me(
         )
 
     return user
+
+
+@router.post(
+    "/change-password",
+    response_model=dict,
+)
+def change_password(
+    password_data: PasswordChange,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    if not verify_password(password_data.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Current password is incorrect",
+        )
+
+    user.password_hash = hash_password(password_data.new_password)
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Password changed successfully"}
